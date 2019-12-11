@@ -15,7 +15,7 @@ done
 grep -vxFf $newlist $oldlist | while read macinfo
 do
         macaddr="${macinfo#* }"
-        ethtemp="$(wl -i ${macinfo% *} phy_tempsense | awk '{print $1}')"
+        ethtemp="$(($(wl -i ${macinfo% *} phy_tempsense | awk '{print $1}')/2+20))"
         arpinfo="$(cat /var/lib/misc/dnsmasq.leases | sed s/*/Unknown/ | grep -iF $macaddr | awk '{print $4 " (" $3")"}')"
         logger -t wireless $macinfo $ethtemp $arpinfo "has disconnected."
 done
@@ -23,7 +23,7 @@ done
 grep -vxFf $oldlist $newlist | while read macinfo
 do
        macaddr="${macinfo#* }"
-       ethtemp="$(wl -i ${macinfo% *} phy_tempsense | awk '{print $1}')"
+       ethtemp="$(($(wl -i ${macinfo% *} phy_tempsense | awk '{print $1}')/2+20))"
        arpinfo="$(cat /var/lib/misc/dnsmasq.leases | sed s/*/Unknown/ | grep -iF $macaddr | awk '{print $4 " (" $3")"}')"
        logger -t wireless $macinfo $ethtemp $arpinfo "has connected."
 done
