@@ -1,0 +1,31 @@
+# This script only works with Broadcom wireless chipsets, not Quantenna.
+# https://www.snbforums.com/threads/to-trace-mobile-mac-adress.20022/#post-144852
+# https://www.snbforums.com/threads/list-associated-wifi-clients-on-command-line.46873/
+
+oldlist=/tmp/assoclist.old
+newlist=/tmp/assoclist.new
+touch $oldlist          # Create an empty file the first time through
+
+for iface in $(nvram get wl_ifnames) $(nvram get wl0_vifs) $(nvram get wl1_vifs)
+do
+        wl -i $iface assoclist >> $newlist
+        sed -i "s/assoclist/$iface/g" $newlist
+done
+
+grep -vxFf $newlist $oldlist | while read macinfo
+do
+        macaddr="${macinfo#* }"
+        ethtemp="$(wl -i ${macinfo% *} phy_tempsense | awk '{print $1}')"
+        arpinfo="$(cat /var/lib/misc/dnsmasq.leases | sed s/*/Unknown/ | grep -iF $macaddr | awk '{print $4 " (" $3")"}')"
+        logger -t wireless $macinfo $ethtemp $arpinfo "has disconnected."
+done
+
+grep -vxFf $oldlist $newlist | while read macinfo
+do
+       macaddr="${macinfo#* }"
+       ethtemp="$(wl -i ${macinfo% *} phy_tempsense | awk '{print $1}')"
+       arpinfo="$(cat /var/lib/misc/dnsmasq.leases | sed s/*/Unknown/ | grep -iF $macaddr | awk '{print $4 " (" $3")"}')"
+       logger -t wireless $macinfo $ethtemp $arpinfo "has connected."
+done
+
+mv $newlist $oldlist
