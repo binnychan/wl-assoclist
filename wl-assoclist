@@ -10,7 +10,7 @@ list_new="/tmp/assoclist.new"
 list_pending="/tmp/assoclist.pending"
 
 # List of MAC addresses for delayed logging (space-separated)
-list_delayedmac="54:E0:19:10:44:33 E6:A4:5F:F7:1D:24"
+list_delayedmac="AA:BB:CC:DD:EE:FF XX:XX:XX:XX:XX:XX"
 list_delayedminute=30
 
 touch "$list_old"  # Ensure the old list exists
@@ -33,8 +33,7 @@ log_event() {
 
     logger -t wireless "$macinfo $ethtemp $arpinfo has $action."
 
-    if [ -n $telegram ]; then
-        
+    if [ -n "$telegram" ]; then
         curl -s -X POST https://api.telegram.org/bot<YourBOTToken>/sendMessage -d chat_id=<channel_id> -d text="Wireless $macinfo $ethtemp $arpinfo has $action." > /dev/null
     fi
 }
