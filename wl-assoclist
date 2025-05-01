@@ -67,10 +67,6 @@ cat "$list_pending" | while read -r macinfodelayed; do
     if [ "$(echo "$macinfodelayed" | cut -d ' ' -f3)" -le "$(date +"%Y%m%d%H%M%S")" ]; then
         sed -i "/ $(echo "$macinfodelayed" | cut -d ' ' -f2) /d" "$list_pending"
         log_event "disconnected (delayed as $(echo "$(date +"%Y%m%d%H%M%S") - $(echo "$macinfodelayed" | cut -d ' ' -f3) + $list_delayedminute * 60" | bc) minutes)" "$(echo "$macinfodelayed" | cut -d' ' -f1,2)" "SendNotification"
-
-        #log_event "disconnected (delayed as "$($(echo "$macinfodelayed" | cut -d ' ' -f3)-$(date +"%Y%m%d%H%M%S"))")" "$(echo "$macinfodelayed" | cut -d' ' -f1,2)"
-        #log_event "disconnected (delayed as $($(echo "$macinfodelayed" | cut -d ' ' -f3) - $(date +"%Y%m%d%H%M%S")))" "$macinfo"
-        #echo "Expired"
     fi
 done
 
