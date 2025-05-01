@@ -45,21 +45,9 @@ grep -vxFf "$list_new" "$list_old" | while read -r macinfo; do
     if echo "$list_delayedmac" | grep -q "$macaddr"; then
         echo $macinfo $(date -d @$(( $(date +%s) + $list_delayedminute * 60 )) +"%Y%m%d%H%M%S") >> "$list_pending"
         log_event "disconnected (delayed)" "$macinfo"
-        #echo "$macinfo" > "$list_pending"
-        #if [ -n "grep $macaddr" "$list_pending" ]; then
-
-        #else
-        #       echo $macinfo $(date -d @$(( $(date +%s) + 600 )) +"%Y%m%d%H%M%S") >> "$list_pending"
-        #        log_event "disconnected (delayed)" "$macinfo"
-        #fi
-        #log_event "disconnected (delayed)" "$macinfo"
-        #at now + 1 minutes <<EOF
-        #$(which logger) -t wireless "$macinfo has disconnected (delayed)."
-        #EOF
     else
         log_event "disconnected" "$macinfo" "SendNotification"
     fi
-    # log_event "disconnected" "$macinfo"
 done
 
 # Detect new connections
@@ -76,14 +64,6 @@ done
 
 # Show delayed connection if expired
 cat "$list_pending" | while read -r macinfodelayed; do
-    #echo "$(($(echo "$macinfodelayed" | cut -d ' ' -f3))-($(date +"%Y%m%d%H%M%S")))"
-    #echo "$(echo "$macinfodelayed" | cut -d ' ' -f3)"
-    #echo "$(date +"%Y%m%d%H%M%S")"
-    #echo "$(( $(date +"%Y%m%d%H%M%S") * 100 ))"
-    #echo "$(echo "$(echo "$macinfodelayed" | cut -d ' ' -f3) - $(date +"%Y%m%d%H%M%S")" | bc)"
-    #echo "$(( $(echo "$macinfodelayed" | cut -d ' ' -f3 | tr -d '[^0-9]') * 1 - $(date +"%Y%m%d%H%M%S") ))"
-    #echo "$(( $(echo "$macinfodelayed" | cut -d ' ' -f3) - $(date +"%Y%m%d%H%M%S") ))"
-    #echo $macinfodelayed | cut -d ' ' -f3
     if [ "$(echo "$macinfodelayed" | cut -d ' ' -f3)" -le "$(date +"%Y%m%d%H%M%S")" ]; then
         sed -i "/ $(echo "$macinfodelayed" | cut -d ' ' -f2) /d" "$list_pending"
         log_event "disconnected (delayed as $(echo "$(date +"%Y%m%d%H%M%S") - $(echo "$macinfodelayed" | cut -d ' ' -f3) + $list_delayedminute * 60" | bc) minutes)" "$(echo "$macinfodelayed" | cut -d' ' -f1,2)" "SendNotification"
