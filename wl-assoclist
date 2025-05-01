@@ -29,7 +29,8 @@ log_event() {
     local iface="${macinfo% *}"
     local macaddr="${macinfo#* }"
     local ethtemp=$(( ($(wl -i "$iface" phy_tempsense | awk '{print $1}') / 2) + 20 ))
-    local arpinfo=$(awk -v mac="$macaddr" '{gsub(/\*/, "Unknown"); if (tolower($2) == tolower(mac)) print $4 " (" $3 ")"}' /var/lib/misc/dnsmasq.leases)
+    local recordname=$(cat /jffs/nvram/custom_clientlist | tr '<' '\n' | grep "$macaddr" | cut -d'>' -f1)
+    local arpinfo=$(awk -v mac="$macaddr" -v recname="$recordname" '{gsub(/\*/, recname ? recname : "Unknown"); if (tolower($2) == tolower(mac)) print $4 " (" $3 ")"}' /var/lib/misc/dnsmasq.leases)
 
     logger -t wireless "$macinfo $ethtemp $arpinfo has $action."
 
@@ -61,7 +62,7 @@ grep -vxFf "$list_old" "$list_new" | while read -r macinfo; do
     fi
 done
 
-# Show delayed connection if expired
+# Show a delayed connection if expired
 cat "$list_pending" | while read -r macinfodelayed; do
     if [ "$(echo "$macinfodelayed" | cut -d ' ' -f3)" -le "$(date +"%Y%m%d%H%M%S")" ]; then
         sed -i "/ $(echo "$macinfodelayed" | cut -d ' ' -f2) /d" "$list_pending"
