@@ -1,31 +1,97 @@
-# This script only works with Broadcom wireless chipsets, not Quantenna.
+#!/bin/sh
+# Optimized script for Broadcom wireless chipsets
+# References:
 # https://www.snbforums.com/threads/to-trace-mobile-mac-adress.20022/#post-144852
 # https://www.snbforums.com/threads/list-associated-wifi-clients-on-command-line.46873/
+# require "bc" command for calculation - opkg install bc
+#
+list_old="/tmp/assoclist.old"
+list_new="/tmp/assoclist.new"
+list_pending="/tmp/assoclist.pending"
 
-oldlist=/tmp/assoclist.old
-newlist=/tmp/assoclist.new
-touch $oldlist          # Create an empty file the first time through
+# List of MAC addresses for delayed logging (space-separated)
+list_delayedmac="54:E0:19:10:44:33 E6:A4:5F:F7:1D:24"
+list_delayedminute=30
 
-for iface in $(nvram get wl_ifnames) $(nvram get wl0_vifs) $(nvram get wl1_vifs)
-do
-        wl -i $iface assoclist >> $newlist
-        sed -i "s/assoclist/$iface/g" $newlist
+touch "$list_old"  # Ensure the old list exists
+touch "$list_pending"  # Ensure the pending list exists
+
+# Gather associated clients for all wireless interfaces
+for iface in $(nvram get wl_ifnames) $(nvram get wl0_vifs) $(nvram get wl1_vifs); do
+    wl -i "$iface" assoclist | sed "s/assoclist/$iface/g" >> "$list_new"
 done
 
-grep -vxFf $newlist $oldlist | while read macinfo
-do
-        macaddr="${macinfo#* }"
-        ethtemp="$(($(wl -i ${macinfo% *} phy_tempsense | awk '{print $1}')/2+20))"
-        arpinfo="$(cat /var/lib/misc/dnsmasq.leases | sed s/*/Unknown/ | grep -iF $macaddr | awk '{print $4 " (" $3")"}')"
-        logger -t wireless $macinfo $ethtemp $arpinfo "has disconnected."
+# Function to log connection events
+log_event() {
+    local action="$1"
+    local macinfo="$2"
+    local telegram="$3"
+    local iface="${macinfo% *}"
+    local macaddr="${macinfo#* }"
+    local ethtemp=$(( ($(wl -i "$iface" phy_tempsense | awk '{print $1}') / 2) + 20 ))
+    local arpinfo=$(awk -v mac="$macaddr" '{gsub(/\*/, "Unknown"); if (tolower($2) == tolower(mac)) print $4 " (" $3 ")"}' /var/lib/misc/dnsmasq.leases)
+
+    logger -t wireless "$macinfo $ethtemp $arpinfo has $action."
+
+    if [ -n $telegram ]; then
+        
+        curl -s -X POST https://api.telegram.org/bot<YourBOTToken>/sendMessage -d chat_id=<channel_id> -d text="Wireless $macinfo $ethtemp $arpinfo has $action." > /dev/null
+    fi
+}
+
+# Detect disconnections
+grep -vxFf "$list_new" "$list_old" | while read -r macinfo; do
+    macaddr="${macinfo#* }"
+    if echo "$list_delayedmac" | grep -q "$macaddr"; then
+        echo $macinfo $(date -d @$(( $(date +%s) + $list_delayedminute * 60 )) +"%Y%m%d%H%M%S") >> "$list_pending"
+        log_event "disconnected (delayed)" "$macinfo"
+        #echo "$macinfo" > "$list_pending"
+        #if [ -n "grep $macaddr" "$list_pending" ]; then
+
+        #else
+        #       echo $macinfo $(date -d @$(( $(date +%s) + 600 )) +"%Y%m%d%H%M%S") >> "$list_pending"
+        #        log_event "disconnected (delayed)" "$macinfo"
+        #fi
+        #log_event "disconnected (delayed)" "$macinfo"
+        #at now + 1 minutes <<EOF
+        #$(which logger) -t wireless "$macinfo has disconnected (delayed)."
+        #EOF
+    else
+        log_event "disconnected" "$macinfo" "SendNotification"
+    fi
+    # log_event "disconnected" "$macinfo"
 done
 
-grep -vxFf $oldlist $newlist | while read macinfo
-do
-       macaddr="${macinfo#* }"
-       ethtemp="$(($(wl -i ${macinfo% *} phy_tempsense | awk '{print $1}')/2+20))"
-       arpinfo="$(cat /var/lib/misc/dnsmasq.leases | sed s/*/Unknown/ | grep -iF $macaddr | awk '{print $4 " (" $3")"}')"
-       logger -t wireless $macinfo $ethtemp $arpinfo "has connected."
+# Detect new connections
+grep -vxFf "$list_old" "$list_new" | while read -r macinfo; do
+    macaddr="${macinfo#* }"
+    #if [ -n "grep $macaddr" "$list_pending" ]; then
+    if grep -q "$macaddr" "$list_pending"; then
+        sed -i "/ $macaddr /d" "$list_pending"
+        log_event "reconnected (delayed)" "$macinfo"
+    else
+        log_event "connected" "$macinfo" "SendNotification"
+    fi
 done
 
-mv $newlist $oldlist
+# Show delayed connection if expired
+cat "$list_pending" | while read -r macinfodelayed; do
+    #echo "$(($(echo "$macinfodelayed" | cut -d ' ' -f3))-($(date +"%Y%m%d%H%M%S")))"
+    #echo "$(echo "$macinfodelayed" | cut -d ' ' -f3)"
+    #echo "$(date +"%Y%m%d%H%M%S")"
+    #echo "$(( $(date +"%Y%m%d%H%M%S") * 100 ))"
+    #echo "$(echo "$(echo "$macinfodelayed" | cut -d ' ' -f3) - $(date +"%Y%m%d%H%M%S")" | bc)"
+    #echo "$(( $(echo "$macinfodelayed" | cut -d ' ' -f3 | tr -d '[^0-9]') * 1 - $(date +"%Y%m%d%H%M%S") ))"
+    #echo "$(( $(echo "$macinfodelayed" | cut -d ' ' -f3) - $(date +"%Y%m%d%H%M%S") ))"
+    #echo $macinfodelayed | cut -d ' ' -f3
+    if [ "$(echo "$macinfodelayed" | cut -d ' ' -f3)" -le "$(date +"%Y%m%d%H%M%S")" ]; then
+        sed -i "/ $(echo "$macinfodelayed" | cut -d ' ' -f2) /d" "$list_pending"
+        log_event "disconnected (delayed as $(echo "$(date +"%Y%m%d%H%M%S") - $(echo "$macinfodelayed" | cut -d ' ' -f3) + $list_delayedminute * 60" | bc) minutes)" "$(echo "$macinfodelayed" | cut -d' ' -f1,2)" "SendNotification"
+
+        #log_event "disconnected (delayed as "$($(echo "$macinfodelayed" | cut -d ' ' -f3)-$(date +"%Y%m%d%H%M%S"))")" "$(echo "$macinfodelayed" | cut -d' ' -f1,2)"
+        #log_event "disconnected (delayed as $($(echo "$macinfodelayed" | cut -d ' ' -f3) - $(date +"%Y%m%d%H%M%S")))" "$macinfo"
+        #echo "Expired"
+    fi
+done
+
+mv "$list_new" "$list_old"
