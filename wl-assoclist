@@ -8,6 +8,8 @@
 list_old="/tmp/assoclist.old"
 list_new="/tmp/assoclist.new"
 list_pending="/tmp/assoclist.pending"
+telegramBotID="9999999999:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+telegramChatID="-9999999999"
 
 # List of MAC addresses for delayed logging (space-separated)
 list_delayedmac="AA:BB:CC:DD:EE:FF XX:XX:XX:XX:XX:XX"
@@ -35,38 +37,55 @@ log_event() {
     logger -t wireless "$macinfo $ethtemp $arpinfo has $action."
 
     if [ -n "$telegram" ]; then
-        curl -s -X POST https://api.telegram.org/bot<YourBOTToken>/sendMessage -d chat_id=<channel_id> -d text="Wireless $macinfo $ethtemp $arpinfo has $action." > /dev/null
+        curl -s -X POST https://api.telegram.org/bot$telegramBotID/sendMessage -d chat_id=$telegramChatID -d text="Wireless $macinfo $ethtemp $arpinfo has $action." > /dev/null
     fi
 }
 
 # Detect disconnections
 grep -vxFf "$list_new" "$list_old" | while read -r macinfo; do
     macaddr="${macinfo#* }"
-    if echo "$list_delayedmac" | grep -q "$macaddr"; then
-        echo $macinfo $(date -d @$(( $(date +%s) + $list_delayedminute * 60 )) +"%Y%m%d%H%M%S") >> "$list_pending"
-        log_event "disconnected (delayed)" "$macinfo"
-    else
-        log_event "disconnected" "$macinfo" "SendNotification"
+    if ! grep -q "$macaddr" "$list_new"; then
+        if echo "$list_delayedmac" | grep -q "$macaddr"; then
+                echo $macinfo $(date -d @$(( $(date +%s) + $list_delayedminute * 60 )) +"%Y%m%d%H%M") >> "$list_pending"
+                log_event "disconnected (delayed)" "$macinfo"
+        else
+                log_event "disconnected" "$macinfo" "SendNotification"
+        fi
     fi
 done
 
 # Detect new connections
 grep -vxFf "$list_old" "$list_new" | while read -r macinfo; do
     macaddr="${macinfo#* }"
-    #if [ -n "grep $macaddr" "$list_pending" ]; then
-    if grep -q "$macaddr" "$list_pending"; then
-        sed -i "/ $macaddr /d" "$list_pending"
-        log_event "reconnected (delayed)" "$macinfo"
+    if grep -q "$macaddr" "$list_old"; then
+        log_event "reconnected (different interface)" "$macinfo"
     else
-        log_event "connected" "$macinfo" "SendNotification"
+        if grep -q "$macaddr" "$list_pending"; then
+                case $(cat "$list_new" | grep "$macaddr" | wc -l) in
+                        "1")
+                                sed -i "/ $macaddr /d" "$list_pending"
+                                log_event "reconnected (delayed)" "$macinfo"
+                                ;;
+                        *)
+                                log_event "reconnected (multi-interface)" "$macinfo"
+                                ;;
+                esac
+        else
+                log_event "connected" "$macinfo" "SendNotification"
+        fi
     fi
 done
 
 # Show a delayed connection if expired
 cat "$list_pending" | while read -r macinfodelayed; do
-    if [ "$(echo "$macinfodelayed" | cut -d ' ' -f3)" -le "$(date +"%Y%m%d%H%M%S")" ]; then
+    if [ "$(echo "$macinfodelayed" | cut -d ' ' -f3)" -le "$(date +"%Y%m%d%H%M")" ]; then
         sed -i "/ $(echo "$macinfodelayed" | cut -d ' ' -f2) /d" "$list_pending"
-        log_event "disconnected (delayed as $(echo "$(date +"%Y%m%d%H%M%S") - $(echo "$macinfodelayed" | cut -d ' ' -f3) + $list_delayedminute * 60" | bc) minutes)" "$(echo "$macinfodelayed" | cut -d' ' -f1,2)" "SendNotification"
+        log_event "disconnected (delayed as $(echo "($(echo "$macinfodelayed" | cut -d ' ' -f3) - $(date +"%Y%m%d%H%M") + $list_delayedminute)" | bc) minutes)" "$(echo "$macinfodelayed" | cut -d' ' -f1,2)" "SendNotification"
+    else
+        if grep -q "$(echo "$macinfodelayed" | cut -d ' ' -f2)" "$list_new"; then
+                sed -i "/ $(echo "$macinfodelayed" | cut -d ' ' -f2) /d" "$list_pending"
+                log_event "reconnected (pending removed)" "$(echo "$macinfodelayed" | cut -d' ' -f1,2)" "SendNotification"
+        fi
     fi
 done
 
